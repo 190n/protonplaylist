@@ -1,9 +1,13 @@
 import requests
 import re
+from collections import namedtuple
 from protonplaylist.secrets import steamAPIKey
 
 reVanityURL = re.compile(r'^https?://steamcommunity\.com/id/(.*)$')
 reProfileURL = re.compile(r'^https?://steamcommunity\.com/profiles/(.*)$')
+
+# information about a game in a user's library
+UserGame = namedtuple('UserGame', 'appID playtime playtimeTwoWeeks')
 
 def isURLValid(url):
     if reVanityURL.match(url):
@@ -27,7 +31,10 @@ def resolveVanityURL(url):
     apiCall = 'https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/'
     apiCall += '?key=' + steamAPIKey
     apiCall += '&vanityurl=' + vanityURL
+    apiCall += '&format=json'
     r = requests.get(apiCall)
+    if r.status_code != 200:
+        raise Exception('HTTP error {} from Steam API'.format(r.status_code))
     json = r.json()['response']
     if json['success'] != 1:
         raise Exception('Steam API error: {}'.format(json['message']))
@@ -35,15 +42,24 @@ def resolveVanityURL(url):
 
 # given a regular profile URL, returns the user ID
 def getUserID(url):
-    pass
+    try:
+        return reProfileURL.findall(url)[0]
+    except IndexError:
+        raise Exception('Invalid URL or not a profile URL: {}'.format(url))
 
 # given a user ID, return a list of games they own
 def getOwnedGames(userID):
-    pass
-
-# returns a list of games they have played in the last two weeks
-def getGamesPlayedRecently(userID):
-    pass
+    apiCall = 'https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/'
+    apiCall += '?key=' + steamAPIKey
+    apiCall += '&steamid=' + userID
+    apiCall += '&format=json'
+    r = requests.get(apiCall)
+    if r.status_code != 200:
+        raise Exception('HTTP error {} from Steam API'.format(r.status_code))
+    json = r.json()['response']
+    if json == {}:
+        raise Exception('Could not get game list')
+    return [UserGame(g['appid'], g['playtime_forever'], g['playtime_2weeks'] if 'playtime_2weeks' in g else 0) for g in json['games']]
 
 # given a list of game IDs, returns various infomration about the games
 def getGameInformation(games):
